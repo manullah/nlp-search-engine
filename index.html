@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NLP - Playing With Words</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+</head>
+<body class="py-32">
+  <div id="app">
+    <div class="max-w-2xl mx-auto">
+      <div class="flex items-center mb-6">   
+        <label for="voice-search" class="sr-only">Search</label>
+        <div class="relative w-full">
+          <div class="flex absolute inset-y-0 left-0 items-center pl-3 pointer-events-none">
+            <svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+              <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"></path>
+            </svg>
+          </div>
+          <input
+            ref="searchInput"
+            v-model="input"
+            type="text"
+            class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full pl-10 p-2.5  dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
+            placeholder="Search any word you want..."
+            required
+            @keyup="keyupSearch"
+          >
+        </div>
+        <button
+          type="submit"
+          class="inline-flex items-center py-2.5 px-6 ml-2 text-sm font-medium text-white bg-blue-700 rounded-lg border border-blue-700 hover:bg-blue-800 focus:ring-4 focus:outline-none focus:ring-blue-300 dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800"
+        >
+          <svg class="mr-2 -ml-1 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+          </svg>
+          Search
+        </button>
+      </div>
+  
+      <code v-if="loading">Loading...</code>
+      <template v-else>
+        <code v-if="lastWordSearch" class="flex flex-col gap-y-6">
+          <ul>
+            <li v-if="list.autocomplete.length === 0">
+              No Result.
+            </li>
+            <li
+              v-else
+              v-for="(item, index) in list.autocomplete"
+              :key="index"
+              class="flex"
+              :class="list.indexActived[0] === 0 && list.indexActived[1] === index ? 'text-blue-700' : ''"
+            >
+              <span class="w-8">
+                {{list.indexActived[0] === 0 && list.indexActived[1] === index ? '>' : ''}}
+              </span>
+              {{item}}
+            </li>
+          </ul>
+    
+          <template v-if="list.synonym.length">
+            <p>or did you means... (get by synonym nltk wordnet)</p>
+            <ul>
+              <li
+                v-for="(item, index) in list.synonym"
+                :key="index"
+                class="flex"
+                :class="list.indexActived[0] === 1 && list.indexActived[1] === index ? 'text-blue-700' : ''"
+              >
+                <span class="w-8">
+                  {{list.indexActived[0] === 1 && list.indexActived[1] === index ? '>' : ''}}
+                </span>
+                {{item}}
+              </li>
+            </ul>
+          </template>
+        </code>
+      </template>
+    </div>
+  </div>
+
+  <script>
+    const URL_API = "http://127.0.0.1:3000"
+    const { createApp } = Vue
+
+    createApp({
+      data() {
+        return {
+          searchInput: '',
+          loading: false,
+          list: {
+            autocomplete: [],
+            synonym: [],
+            indexActived: [0, 0]
+          },
+          timeout: null,
+        }
+      },
+      computed: {
+        lastWordSearch() {
+          const listWord = this.searchInput.split(' ')
+          const lastWord = listWord[listWord.length - 1]
+          return lastWord
+        },
+        input: {
+          get() {
+            return this.searchInput;
+          },
+          set(val) {
+            this.loading = !!val
+            this.searchInput = val;
+
+            if (this.timeout) clearTimeout(this.timeout);
+            this.timeout = setTimeout(async () => {
+
+              const listWord = val.split(' ')
+              const lastWord = listWord[listWord.length - 1]
+
+              if (lastWord === '') return
+
+              const result = await Promise.allSettled([
+                fetch(`${URL_API}/autocomplete?query=${lastWord}`).then((response) => response.json()),
+                fetch(`${URL_API}/synonym?query=${lastWord}`).then((response) => response.json())
+              ])
+              
+              // do something
+              this.list.indexActived = [0, 0]
+              if (result[0].status === 'fulfilled') {
+                this.list.autocomplete = result[0].value.map((item) => item[0])
+              }
+              if (result[1].status === 'fulfilled') {
+                this.list.synonym = result[1].value.map((item) => item.split('_').join(' ')).filter((item, index) => index <= 9)
+              }
+              this.loading = false
+
+            }, 300);
+          }
+        }
+      },
+      watch: {
+        lastWordSearch(value) {
+          if (!value) {
+            this.list = {
+              autocomplete: [],
+              synonym: [],
+              indexActived: [0, 0]
+            }
+            this.loading = false
+          }
+        }
+      },
+      created() {
+        window.addEventListener('keyup', this.doCommand);
+      },
+      destroyed() {
+        window.removeEventListener('keyup', this.doCommand);
+      },
+      methods: {
+        doCommand(event) {
+          const keyupList = ['"ArrowDown"', '"ArrowUp"', '"Enter"', '" "']
+          key = event.key
+
+          if (!this.lastWordSearch || this.list.autocomplete.length === 0) return
+          if (!keyupList.includes(JSON.stringify(key))) return
+
+          if (key === 'Enter') {
+            const getAutocomplete = this.list.autocomplete[this.list.indexActived[1]]
+            const listSearch = this.searchInput.split(' ')
+            listSearch.pop()
+            this.searchInput = `${listSearch.join(' ')} ${getAutocomplete} `
+            this.$refs.searchInput.focus()
+          }
+
+          if (JSON.stringify(key) === '" "') {
+            this.searchInput = `${this.searchInput} `
+            this.$refs.searchInput.focus()
+          }
+          
+          if (key === 'ArrowDown') {
+            const activedList = this.list.indexActived[0] === 0 ? 'autocomplete' : 'synonym'
+            if (this.list.indexActived[1] === (this.list[activedList].length - 1)) {
+              if (this.list.indexActived[0] === 1 || this.list.synonym.length === 0) return
+              this.list.indexActived = [1, 0]
+              return
+            }
+            this.list.indexActived[1] = this.list.indexActived[1] + 1
+          }
+
+          if (key === 'ArrowUp') {
+            if (this.list.indexActived[1] === 0) {
+              if (this.list.indexActived[0] === 0) return
+              this.list.indexActived = [0, this.list.autocomplete.length - 1]
+              return
+            }
+            this.list.indexActived[1] = this.list.indexActived[1] - 1
+          }
+        },
+        keyupSearch(event) {
+          if (!this.lastWordSearch || this.list.autocomplete.length === 0) return
+
+          key = event.key
+          if (key === 'ArrowDown' || key === 'ArrowUp') {
+            event.target.blur()
+          }
+        }
+      },
+    }).mount('#app')
+  </script>
+</body>
+</html>
