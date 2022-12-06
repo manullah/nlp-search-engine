@@ -126,7 +126,7 @@
                 fetch(`${URL_API}/autocomplete?query=${lastWord}`).then((response) => response.json()),
                 fetch(`${URL_API}/synonym?query=${lastWord}`).then((response) => response.json())
               ])
-              
+
               // do something
               this.list.indexActived = [0, 0]
               if (result[0].status === 'fulfilled') {
@@ -168,7 +168,11 @@
           if (!keyupList.includes(JSON.stringify(key))) return
 
           if (key === 'Enter') {
-            const getAutocomplete = this.list.autocomplete[this.list.indexActived[1]]
+            let getAutocomplete = this.list.autocomplete[this.list.indexActived[1]]
+            if (this.list.indexActived[0] === 1) {
+              getAutocomplete = this.list.synonym[this.list.indexActived[1]]
+            }
+
             const listSearch = this.searchInput.split(' ')
             listSearch.pop()
             this.searchInput = `${listSearch.join(' ')} ${getAutocomplete} `
